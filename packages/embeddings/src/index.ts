@@ -9,17 +9,20 @@ export interface EmbeddingResult {
 }
 
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'BGE-M3';
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 
 export class EmbeddingClient {
   private model: string;
+  private apiUrl: string;
 
   constructor(config?: Partial<EmbeddingConfig>) {
     this.model = config?.model || EMBEDDING_MODEL;
+    this.apiUrl = OLLAMA_BASE_URL;
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
     try {
-      const response = await fetch('http://localhost:11434/api/embeddings', {
+      const response = await fetch(`${this.apiUrl}/api/embeddings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -67,7 +70,7 @@ export class EmbeddingClient {
 
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch('http://localhost:11434/api/tags');
+      const response = await fetch(`${this.apiUrl}/api/tags`);
       if (!response.ok) return false;
       const data = await response.json() as { models?: { name: string }[] };
       return data.models?.some((m) => m.name.includes('bge')) ?? false;

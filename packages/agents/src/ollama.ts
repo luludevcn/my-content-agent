@@ -1,7 +1,9 @@
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:14b';
+const OLLAMA_TEMPERATURE = parseFloat(process.env.OLLAMA_TEMPERATURE || '0.7');
 
 export interface OllamaConfig {
-  model: string;
+  model?: string;
   temperature?: number;
 }
 
@@ -25,8 +27,8 @@ export class OllamaClient {
   private temperature: number;
 
   constructor(config: OllamaConfig) {
-    this.model = config.model || 'qwen3:14b';
-    this.temperature = config.temperature || 0.7;
+    this.model = config.model || OLLAMA_MODEL;
+    this.temperature = config.temperature || OLLAMA_TEMPERATURE;
   }
 
   async generate(prompt: string): Promise<string> {
@@ -127,8 +129,8 @@ export class OllamaClient {
 
 export const createOllamaClient = (config?: Partial<OllamaConfig>) => {
   return new OllamaClient({
-    model: 'qwen3:14b',
-    temperature: 0.7,
+    model: OLLAMA_MODEL,
+    temperature: OLLAMA_TEMPERATURE,
     ...config
   });
 };

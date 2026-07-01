@@ -20,7 +20,7 @@ export interface SearchResult {
 }
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
-const DEFAULT_COLLECTION = 'health_articles';
+const QDRANT_COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'health_articles';
 
 export class RAGClient {
   private qdrantUrl: string;
@@ -29,7 +29,7 @@ export class RAGClient {
 
   constructor(config?: Partial<RAGConfig>) {
     this.qdrantUrl = config?.qdrantUrl || QDRANT_URL;
-    this.collectionName = config?.collectionName || DEFAULT_COLLECTION;
+    this.collectionName = config?.collectionName || QDRANT_COLLECTION_NAME;
     this.embeddingClient = createEmbeddingClient();
   }
 
