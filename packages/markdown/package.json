@@ -1,0 +1,19 @@
+{
+  "name": "@health-content-ai/markdown",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "@health-content-ai/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20"
+  }
+}

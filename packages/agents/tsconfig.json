@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@health-content-ai/shared": ["../shared/src"],
+      "@health-content-ai/prompts": ["../prompts/src"],
+      "@health-content-ai/markdown": ["../markdown/src"],
+      "@health-content-ai/embeddings": ["../embeddings/src"],
+      "@health-content-ai/rag": ["../rag/src"],
+      "@health-content-ai/seo": ["../seo/src"],
+      "@health-content-ai/medical": ["../medical/src"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

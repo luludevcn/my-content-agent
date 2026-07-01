@@ -1,0 +1,19 @@
+{
+  "name": "@health-content-ai/rag",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@health-content-ai/embeddings": "0.1.0",
+    "@health-content-ai/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@health-content-ai/agents",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.1.0",
+    "@langchain/ollama": "^0.0.1",
+    "@langchain/langgraph": "^0.1.0",
+    "@health-content-ai/prompts": "0.1.0",
+    "@health-content-ai/markdown": "0.1.0",
+    "@health-content-ai/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20"
+  }
+}
