@@ -283,27 +283,27 @@ export class ArticleGenerator {
       }
     }
 
+    let seo: SEOData;
+    
     if (!options.skipSEO) {
       if (onStep) {
         onStep({ id: 'seo', name: 'SEO Optimization', status: 'running' });
       }
 
-      const seo = await this.seoAgent.optimize(request.keyword, content);
+      seo = await this.seoAgent.optimize(request.keyword, content);
       
       if (onStep) {
         onStep({ id: 'seo', name: 'SEO Optimization', status: 'completed', output: JSON.stringify(seo) });
       }
     } else {
       const analyzed = this.seoAgent.analyzeContent(content);
-      const seo: SEOData = {
+      seo = {
         title: request.keyword,
         metaDescription: content.substring(0, 160),
         slug: request.keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         keywords: [],
       };
     }
-
-    const seo = await this.seoAgent.optimize(request.keyword, content);
 
     if (onStep) {
       onStep({ id: 'links', name: 'Internal Links', status: 'running' });
