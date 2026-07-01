@@ -1,11 +1,74 @@
-node_modules
-dist
-.next
-.output
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Build outputs
+dist/
+.next/
+.out/
+.output/
+build/
+
+# Environment variables
 .env
 .env.local
 .env.*.local
-pnpm-lock.yaml
-yarn.lock
-.DS_Store
+.env.production
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
 *.log
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Turbo cache
+.turbo/
+
+# Database
+*.db
+prisma/migrations/
+prisma/*.db
+
+# Docker
+docker-compose.override.yml
+*.dockerfile
+.dockerignore
+
+# Output directory
+output/
+
+# Qdrant data
+qdrant_data/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Test coverage
+coverage/
+
+# Package manager locks (keep npm lock, ignore others)
+yarn.lock
+pnpm-lock.yaml
