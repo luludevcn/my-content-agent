@@ -276,6 +276,161 @@ npm run format
 - 语气风格：5 种（友好、专业、权威、对话、共情）
 - 输出格式：Markdown + Frontmatter + Schema 标记
 
-## 📄 License
+## � 问题诊断
+
+### 常见问题
+
+#### Ollama 连接失败
+
+**错误信息：**
+```
+Ollama API error: 404
+Ollama: ❌ Offline
+```
+
+**解决方案：**
+1. 确保 Ollama 服务正在运行：
+   ```bash
+   ollama serve
+   ```
+2. 检查 `OLLAMA_BASE_URL` 环境变量是否正确配置
+3. 验证端口 `11434` 是否被占用：
+   ```bash
+   lsof -i :11434
+   ```
+
+#### Qdrant 连接失败
+
+**错误信息：**
+```
+Qdrant initialization failed
+Qdrant: ❌ Offline
+```
+
+**解决方案：**
+1. 确保 Qdrant 容器正在运行：
+   ```bash
+   docker ps | grep qdrant
+   ```
+2. 如果容器未运行，启动 Qdrant：
+   ```bash
+   docker run -p 6333:6333 -v $(pwd)/qdrant_data:/qdrant/storage qdrant/qdrant
+   ```
+3. 检查 `QDRANT_URL` 环境变量配置
+
+#### 嵌入模型未找到
+
+**错误信息：**
+```
+Embedding Model: ❌ Offline
+```
+
+**解决方案：**
+1. 拉取嵌入模型：
+   ```bash
+   ollama pull bge-m3
+   ```
+2. 验证模型是否已安装：
+   ```bash
+   ollama list
+   ```
+
+#### 构建失败
+
+**错误信息：**
+```
+Module not found: Error: Can't resolve '@/components/ui/xxx'
+```
+
+**解决方案：**
+1. 确保所有依赖已安装：
+   ```bash
+   npm install
+   ```
+2. 检查组件文件是否存在于 `components/ui/` 目录
+
+#### 环境变量不生效
+
+**错误信息：**
+```
+process.env.OLLAMA_BASE_URL is undefined
+```
+
+**解决方案：**
+1. 确保 `.env.local` 文件位于项目根目录
+2. 重启开发服务器：
+   ```bash
+   npm run dev
+   ```
+3. 验证环境变量是否正确加载：
+   ```bash
+   cat .env.local
+   ```
+
+### 诊断工具
+
+#### 服务状态检查
+
+运行服务检查脚本：
+```bash
+npx tsx scripts/check-services.ts
+```
+
+输出示例：
+```
+=== Health Content AI Service Check ===
+
+Ollama: ✅ Online
+Embedding Model: ✅ Online
+Qdrant: ✅ Online
+Qdrant Documents: 12
+
+=== Check Complete ===
+```
+
+#### 查看日志
+
+查看开发服务器日志：
+```bash
+npm run dev 2>&1 | tail -50
+```
+
+#### 验证环境变量
+
+```bash
+npx tsx -e "console.log('OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL)"
+```
+
+### 性能问题
+
+#### 生成速度慢
+
+**可能原因：**
+- 模型加载时间过长
+- CPU/GPU 资源不足
+- 网络延迟
+
+**优化建议：**
+1. 使用较小的模型（如 `qwen3:7b` 代替 `qwen3:14b`）：
+   ```bash
+   ollama pull qwen3:7b
+   ```
+2. 降低温度参数（影响生成多样性）：
+   ```env
+   OLLAMA_TEMPERATURE=0.5
+   ```
+3. 增加 Ollama 资源限制：
+   ```bash
+   OLLAMA_MAX_LOADED_MODELS=1 ollama serve
+   ```
+
+#### 内存占用高
+
+**解决方案：**
+1. 限制模型加载数量
+2. 使用量化模型（如 `qwen3:7b-q8_0`）
+3. 定期重启服务释放内存
+
+## �📄 License
 
 MIT License
