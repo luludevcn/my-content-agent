@@ -26,7 +26,8 @@
       "@health-content-ai/rag": ["../../packages/rag/src"],
       "@health-content-ai/seo": ["../../packages/seo/src"],
       "@health-content-ai/medical": ["../../packages/medical/src"],
-      "@health-content-ai/embeddings": ["../../packages/embeddings/src"]
+      "@health-content-ai/embeddings": ["../../packages/embeddings/src"],
+      "@health-content-ai/database": ["../../packages/database/src"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

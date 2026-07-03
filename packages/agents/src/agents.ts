@@ -1,11 +1,7 @@
 import { OllamaClient } from './ollama';
 import {
-  buildWriterPrompt,
   buildIntentPrompt,
   buildOutlinePrompt,
-  buildSEOPrompt,
-  buildMedicalReviewPrompt,
-  buildInternalLinkPrompt
 } from '@health-content-ai/prompts';
 import { RAGClient, createRAGClient } from '@health-content-ai/rag';
 import { SEOAnalyzer, createSEOAnalyzer } from '@health-content-ai/seo';
@@ -18,21 +14,72 @@ import {
   ArticleGenerationRequest,
   ArticleGenerationResult,
   GenerationStep,
-  Category
+  OutlineSection
 } from '@health-content-ai/shared';
-import { generateMarkdown, formatSchema } from '@health-content-ai/markdown';
+import { formatSchema } from '@health-content-ai/markdown';
+
+export interface SectionContent {
+  title: string;
+  content: string;
+  reviewed: boolean;
+}
 
 export class IntentAgent {
-  private client: OllamaClient;
+  // 使用规则映射替代LLM调用，节省一次完整的LLM调用
+  analyze(keyword: string): IntentAnalysisResult {
+    const lowerKeyword = keyword.toLowerCase();
+    
+    let intent: IntentAnalysisResult['intent'] = 'informational';
+    
+    // 规则映射
+    if (lowerKeyword.includes('how to') || lowerKeyword.includes('how do')) {
+      intent = 'how-to';
+    } else if (lowerKeyword.includes(' vs ') || lowerKeyword.includes('compared to')) {
+      intent = 'comparison';
+    } else if (lowerKeyword.includes('symptom') || lowerKeyword.includes('symptoms')) {
+      intent = 'symptoms';
+    } else if (lowerKeyword.includes('treatment') || lowerKeyword.includes('treat')) {
+      intent = 'treatment';
+    } else if (lowerKeyword.includes('buy') || lowerKeyword.includes('best') || 
+               lowerKeyword.includes('review') || lowerKeyword.includes('product')) {
+      intent = 'commercial';
+    }
 
-  constructor(client: OllamaClient) {
-    this.client = client;
+    // 提取实体和相关主题（简化版）
+    const entities = this.extractEntities(keyword);
+    const relatedTopics = this.extractRelatedTopics(keyword, intent);
+
+    return {
+      intent,
+      targetAudience: 'seniors and caregivers',
+      entities,
+      relatedTopics,
+    };
   }
 
-  async analyze(keyword: string): Promise<IntentAnalysisResult> {
-    const prompt = buildIntentPrompt(keyword);
-    const result = await this.client.generateJSON(prompt);
-    return result;
+  private extractEntities(keyword: string): string[] {
+    const healthEntities = [
+      'arthritis', 'joint pain', 'heart health', 'blood pressure', 'hypertension',
+      'diabetes', 'fall prevention', 'balance', 'mobility', 'exercise',
+      'nutrition', 'diet', 'chronic pain', 'mental health', 'memory',
+      'sleep', 'anxiety', 'depression', 'osteoporosis', 'vitamin',
+      'supplement', 'medication', 'caregiver', 'elderly', 'senior'
+    ];
+    return healthEntities.filter(entity => 
+      keyword.toLowerCase().includes(entity.toLowerCase())
+    );
+  }
+
+  private extractRelatedTopics(keyword: string, intent: string): string[] {
+    const relatedMap: Record<string, string[]> = {
+      'how-to': ['tips', 'guide', 'steps', 'exercises'],
+      'symptoms': ['causes', 'diagnosis', 'warning signs'],
+      'treatment': ['medications', 'therapy', 'lifestyle changes'],
+      'comparison': ['benefits', 'side effects', 'differences'],
+      'commercial': ['reviews', 'products', 'best'],
+      'informational': ['overview', 'facts', 'research'],
+    };
+    return relatedMap[intent] || ['overview', 'tips'];
   }
 }
 
@@ -43,11 +90,22 @@ export class RAGAgent {
     this.ragClient = ragClient || createRAGClient();
   }
 
-  async search(keyword: string, limit: number = 10): Promise<string[]> {
+  async search(keyword: string, limit: number = 5): Promise<string[]> {
     try {
+      const isHealthy = await this.ragClient.checkHealth();
+      if (!isHealthy) {
+        console.warn('RAG Client not healthy - Qdrant may not be running');
+        return [];
+      }
+      const docCount = await this.ragClient.getDocumentCount();
+      if (docCount === 0) {
+        console.warn('RAG collection is empty - no documents to search');
+        return [];
+      }
       const results = await this.ragClient.search(keyword, limit);
       return results.map((r) => r.document.title);
-    } catch {
+    } catch (error) {
+      console.error('RAG search error:', error);
       return [];
     }
   }
@@ -84,60 +142,77 @@ export class OutlineAgent {
     this.client = client;
   }
 
-  async generate(keyword: string, intentAnalysis: IntentAnalysisResult): Promise<OutlineResult> {
+  async generate(keyword: string, intentAnalysis: IntentAnalysisResult, signal?: AbortSignal): Promise<OutlineResult> {
     const prompt = buildOutlinePrompt(keyword, JSON.stringify(intentAnalysis));
-    const result = await this.client.generateJSON(prompt);
+    const result = await this.client.generateJSON(prompt, undefined, signal);
     return result;
   }
 }
 
-export class WriterAgent {
+export class ArticleWriterAgent {
   private client: OllamaClient;
 
   constructor(client: OllamaClient) {
     this.client = client;
   }
 
-  async write(request: ArticleGenerationRequest, outline: OutlineResult, ragResults: string[] = []): Promise<string> {
-    const outlineStr = JSON.stringify(outline, null, 2);
-    const prompt = buildWriterPrompt(request, outlineStr, ragResults);
-    const result = await this.client.generate(prompt);
-    return result;
-  }
-
-  async writeStream(
+  async writeFullArticle(
     request: ArticleGenerationRequest,
     outline: OutlineResult,
-    callback: (chunk: string) => void,
-    ragResults: string[] = []
-  ): Promise<void> {
-    const outlineStr = JSON.stringify(outline, null, 2);
-    const prompt = buildWriterPrompt(request, outlineStr, ragResults);
-    await this.client.generateStream(prompt, callback);
+    ragResults: string[] = [],
+    signal?: AbortSignal
+  ): Promise<string> {
+    const toneDescription = {
+      friendly: 'Warm, approachable, supportive',
+      professional: 'Expert, knowledgeable, proper terminology',
+      authoritative: 'Confident, trustworthy, citing medical principles',
+      conversational: 'Casual, engaging, like a conversation',
+      empathetic: 'Understanding, compassionate, acknowledging challenges'
+    }[request.tone];
+
+    const sectionsText = outline.sections.map(s => 
+      s.subsections && s.subsections.length > 0 
+        ? `- ${s.title}\n  - ${s.subsections.join('\n  - ')}`
+        : `- ${s.title}`
+    ).join('\n');
+
+    const prompt = `Write a comprehensive health article about "${request.keyword}".
+
+Audience: ${request.audience}
+Tone: ${toneDescription}
+
+Structure (follow this exactly):
+${sectionsText}
+
+Requirements:
+- Write in English only
+- Use Markdown format with proper headings (## for sections, ### for subsections)
+- Approximately ${request.length} words total
+- Use cautious language: "may help" instead of "cures" or "treats"
+- Include practical tips and actionable advice
+- Target reading level: Grade 6 (simple, clear sentences)
+- Do not use AI phrases like "As an AI" or "I cannot provide medical advice"
+
+${ragResults.length > 0 ? `Related articles for reference:\n${ragResults.join('\n')}` : ''}
+
+Start with a compelling introduction and end with key takeaways.
+Do NOT include a table of contents or summary section.`;
+
+    const result = await this.client.generate(prompt, undefined, signal);
+    return result.trim();
   }
 }
 
 export class SEOAgent {
-  private client: OllamaClient;
   private analyzer: SEOAnalyzer;
 
-  constructor(client: OllamaClient) {
-    this.client = client;
+  constructor() {
     this.analyzer = createSEOAnalyzer();
   }
 
-  async optimize(keyword: string, article: string): Promise<SEOData> {
-    const prompt = buildSEOPrompt(keyword, article);
-    const aiResult = await this.client.generateJSON(prompt);
-    
-    const analyzed = this.analyzer.generateSEOData(keyword, article);
-    
-    return {
-      title: aiResult.title || analyzed.title,
-      metaDescription: aiResult.metaDescription || analyzed.metaDescription,
-      slug: aiResult.slug || analyzed.slug,
-      keywords: aiResult.keywords || analyzed.keywords,
-    };
+  optimize(keyword: string, article: string): SEOData {
+    // 使用本地SEOAnalyzer，完全移除LLM调用
+    return this.analyzer.generateSEOData(keyword, article);
   }
 
   analyzeContent(content: string) {
@@ -145,59 +220,49 @@ export class SEOAgent {
   }
 }
 
-export class MedicalReviewAgent {
-  private client: OllamaClient;
+export class LocalMedicalChecker {
   private reviewer: MedicalReviewer;
 
-  constructor(client: OllamaClient) {
-    this.client = client;
+  constructor() {
     this.reviewer = createMedicalReviewer();
   }
 
-  async review(article: string): Promise<string> {
-    const prompt = buildMedicalReviewPrompt(article);
-    const aiResult = await this.client.generate(prompt);
-    
-    const reviewed = this.reviewer.review(aiResult);
-    
-    return reviewed.reviewedContent;
+  check(content: string): string {
+    const result = this.reviewer.review(content);
+    return result.reviewedContent;
   }
 
-  getReviewIssues(article: string) {
-    return this.reviewer.review(article);
+  getIssues(content: string) {
+    return this.reviewer.review(content);
   }
 }
 
-export class InternalLinkAgent {
-  private client: OllamaClient;
+export class LocalInternalLinker {
   private ragAgent: RAGAgent;
 
-  constructor(client: OllamaClient, ragAgent?: RAGAgent) {
-    this.client = client;
+  constructor(ragAgent?: RAGAgent) {
     this.ragAgent = ragAgent || new RAGAgent();
   }
 
-  async suggest(keyword: string, article: string, existingArticles: string[]): Promise<InternalLink[]> {
-    const ragLinks = await this.ragAgent.suggestInternalLinks(keyword, article);
-    
-    if (ragLinks.length > 0) {
-      return ragLinks;
+  // 复用初始RAG搜索结果，避免重复embedding+搜索
+  async suggest(keyword: string, article: string, existingResults?: string[]): Promise<InternalLink[]> {
+    if (existingResults && existingResults.length > 0) {
+      // 直接使用已有结果，无需再次搜索
+      return existingResults.map((title, index) => ({
+        title,
+        url: `/articles/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        relevance: Math.round((1 - index * 0.15) * 100) / 100,
+      }));
     }
-
-    const prompt = buildInternalLinkPrompt(keyword, article, existingArticles);
-    try {
-      const result = await this.client.generateJSON(prompt);
-      return result.links || [];
-    } catch {
-      return [];
-    }
+    return await this.ragAgent.suggestInternalLinks(keyword, article);
   }
 }
 
 export interface GenerationOptions {
   skipRAG?: boolean;
-  skipMedicalReview?: boolean;
+  skipMedicalCheck?: boolean;
   skipSEO?: boolean;
+  signal?: AbortSignal;
 }
 
 export class ArticleGenerator {
@@ -205,20 +270,20 @@ export class ArticleGenerator {
   private intentAgent: IntentAgent;
   private ragAgent: RAGAgent;
   private outlineAgent: OutlineAgent;
-  private writerAgent: WriterAgent;
+  private writerAgent: ArticleWriterAgent;
   private seoAgent: SEOAgent;
-  private medicalReviewAgent: MedicalReviewAgent;
-  private internalLinkAgent: InternalLinkAgent;
+  private medicalChecker: LocalMedicalChecker;
+  private internalLinker: LocalInternalLinker;
 
   constructor(client: OllamaClient) {
     this.client = client;
-    this.intentAgent = new IntentAgent(client);
+    this.intentAgent = new IntentAgent(); // 不再需要client参数
     this.ragAgent = new RAGAgent();
     this.outlineAgent = new OutlineAgent(client);
-    this.writerAgent = new WriterAgent(client);
-    this.seoAgent = new SEOAgent(client);
-    this.medicalReviewAgent = new MedicalReviewAgent(client);
-    this.internalLinkAgent = new InternalLinkAgent(client, this.ragAgent);
+    this.writerAgent = new ArticleWriterAgent(client);
+    this.seoAgent = new SEOAgent(); // 不再需要client参数
+    this.medicalChecker = new LocalMedicalChecker();
+    this.internalLinker = new LocalInternalLinker(this.ragAgent);
   }
 
   async checkDuplicate(keyword: string): Promise<{ exists: boolean; similarArticles: string[] }> {
@@ -233,53 +298,68 @@ export class ArticleGenerator {
   ): Promise<ArticleGenerationResult> {
     if (onStep) {
       onStep({ id: 'intent', name: 'Intent Analysis', status: 'running' });
+      onStep({ id: 'rag', name: 'RAG Search', status: 'running' });
     }
 
-    const intent = await this.intentAgent.analyze(request.keyword);
+    const intent = this.intentAgent.analyze(request.keyword);
     
+    let ragResults: string[] = [];
+    let ragStatus: 'completed' | 'failed' = 'completed';
+    let ragOutput = '';
+    
+    if (!options.skipRAG) {
+      try {
+        ragResults = await this.ragAgent.search(request.keyword, 5);
+        ragOutput = ragResults.length > 0 
+          ? `Found ${ragResults.length} related articles` 
+          : 'No related articles found (collection may be empty or Qdrant not running)';
+      } catch (error) {
+        ragStatus = 'failed';
+        ragOutput = `RAG search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+    } else {
+      ragOutput = 'RAG search skipped';
+    }
+
     if (onStep) {
       onStep({ id: 'intent', name: 'Intent Analysis', status: 'completed', output: JSON.stringify(intent) });
-    }
-
-    let ragResults: string[] = [];
-    if (!options.skipRAG) {
-      if (onStep) {
-        onStep({ id: 'rag', name: 'RAG Search', status: 'running' });
-      }
-
-      ragResults = await this.ragAgent.search(request.keyword, 10);
-      
-      if (onStep) {
-        onStep({ id: 'rag', name: 'RAG Search', status: 'completed', output: `Found ${ragResults.length} related articles` });
-      }
+      onStep({ id: 'rag', name: 'RAG Search', status: ragStatus, output: ragOutput });
     }
 
     if (onStep) {
       onStep({ id: 'outline', name: 'Outline Generation', status: 'running' });
     }
 
-    const outline = await this.outlineAgent.generate(request.keyword, intent);
+    const outline = await this.outlineAgent.generate(request.keyword, intent, options.signal);
     
     if (onStep) {
       onStep({ id: 'outline', name: 'Outline Generation', status: 'completed', output: JSON.stringify(outline) });
-      onStep({ id: 'writer', name: 'Content Writing', status: 'running' });
     }
 
-    let content = await this.writerAgent.write(request, outline, ragResults);
-    
     if (onStep) {
-      onStep({ id: 'writer', name: 'Content Writing', status: 'completed', output: content.substring(0, 500) + '...' });
+      onStep({ id: 'write', name: 'Article Writing', status: 'running' });
     }
 
-    if (!options.skipMedicalReview) {
+    let articleContent = await this.writerAgent.writeFullArticle(request, outline, ragResults, options.signal);
+
+    if (onStep) {
+      const preview = articleContent.length > 200 ? articleContent.substring(0, 200) + '...' : articleContent;
+      onStep({ id: 'write', name: 'Article Writing', status: 'completed', output: preview });
+    }
+
+    if (!options.skipMedicalCheck) {
       if (onStep) {
-        onStep({ id: 'medical', name: 'Medical Review', status: 'running' });
+        onStep({ id: 'medical', name: 'Medical Check', status: 'running' });
       }
 
-      content = await this.medicalReviewAgent.review(content);
-      
+      const medicalResult = this.medicalChecker.getIssues(articleContent);
+      articleContent = medicalResult.reviewedContent;
+
       if (onStep) {
-        onStep({ id: 'medical', name: 'Medical Review', status: 'completed', output: content.substring(0, 500) + '...' });
+        const issuesSummary = medicalResult.issues.length > 0
+          ? `Found ${medicalResult.issues.length} issues: ${medicalResult.issues.map(i => i.explanation).join(', ')}`
+          : 'No issues found';
+        onStep({ id: 'medical', name: 'Medical Check', status: 'completed', output: issuesSummary });
       }
     }
 
@@ -290,16 +370,16 @@ export class ArticleGenerator {
         onStep({ id: 'seo', name: 'SEO Optimization', status: 'running' });
       }
 
-      seo = await this.seoAgent.optimize(request.keyword, content);
+      seo = await this.seoAgent.optimize(request.keyword, articleContent);
       
       if (onStep) {
         onStep({ id: 'seo', name: 'SEO Optimization', status: 'completed', output: JSON.stringify(seo) });
       }
     } else {
-      const analyzed = this.seoAgent.analyzeContent(content);
+      const analyzed = this.seoAgent.analyzeContent(articleContent);
       seo = {
         title: request.keyword,
-        metaDescription: content.substring(0, 160),
+        metaDescription: articleContent.substring(0, 160),
         slug: request.keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         keywords: [],
       };
@@ -309,14 +389,15 @@ export class ArticleGenerator {
       onStep({ id: 'links', name: 'Internal Links', status: 'running' });
     }
 
-    const internalLinks = await this.internalLinkAgent.suggest(request.keyword, content, ragResults);
+    // 复用初始RAG搜索结果，避免重复embedding+搜索
+    const internalLinks = await this.internalLinker.suggest(request.keyword, articleContent, ragResults);
     
     if (onStep) {
       onStep({ id: 'links', name: 'Internal Links', status: 'completed', output: JSON.stringify(internalLinks) });
       onStep({ id: 'publish', name: 'Markdown Export', status: 'running' });
     }
 
-    const schema = formatSchema(seo.title, seo.metaDescription, outline.faq);
+    const schema = formatSchema(seo.title, seo.metaDescription, outline.faq || []);
 
     const metadata = {
       title: outline.h1,
@@ -334,9 +415,9 @@ export class ArticleGenerator {
 
     return {
       metadata,
-      content,
+      content: articleContent,
       seo,
-      faq: outline.faq,
+      faq: outline.faq || [],
       internalLinks,
       schema
     };

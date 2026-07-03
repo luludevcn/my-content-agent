@@ -1,0 +1,23 @@
+{
+  "name": "@health-content-ai/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "prisma generate && tsc",
+    "dev": "prisma generate && tsc --watch",
+    "migrate": "prisma migrate dev",
+    "migrate:prod": "prisma migrate deploy",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.14.0",
+    "prisma": "^5.14.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

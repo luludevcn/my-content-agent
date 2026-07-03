@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,17 +10,47 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   Sparkles,
   Loader2,
   CheckCircle,
   AlertCircle,
+  Circle,
   Copy,
   FileText,
   Search,
   ArrowRight,
+  X,
+  Play,
+  Clock,
+  Trash2,
+  ChevronRight,
+  ScrollText,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { ArticleGenerationRequest, Category, Tone } from '@health-content-ai/shared';
+
+interface Task {
+  id: string;
+  keyword: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  audience: string;
+  length: number;
+  category: string;
+  tone: string;
+  progress: number;
+  error?: string;
+  createdAt: string;
+  logs?: Array<{
+    id: string;
+    step: string;
+    message: string;
+    level: string;
+    timestamp: string;
+  }>;
+}
 
 const categories: { value: Category; label: string }[] = [
   { value: 'arthritis', label: 'Arthritis' },
@@ -46,15 +76,13 @@ const tones: { value: Tone; label: string }[] = [
 const audiences = ['Seniors', 'Caregivers', 'General Audience', 'Healthcare Providers'];
 const lengths = [1500, 2000, 3000];
 
-const steps = [
+const initialSteps = [
   { id: 'intent', name: 'Intent Analysis' },
   { id: 'rag', name: 'RAG Search' },
-  { id: 'outline', name: 'Outline' },
-  { id: 'writer', name: 'Writer' },
-  { id: 'seo', name: 'SEO' },
-  { id: 'medical', name: 'Medical Review' },
-  { id: 'links', name: 'Internal Links' },
-  { id: 'publish', name: 'Markdown Export' },
+  { id: 'outline', name: 'Outline Generation' },
+  { id: 'write', name: 'Article Writing' },
+  { id: 'medical', name: 'Medical Check' },
+  { id: 'seo', name: 'SEO Optimization' },
 ];
 
 export default function NewArticle() {
@@ -64,10 +92,92 @@ export default function NewArticle() {
   const [category, setCategory] = useState<Category>('mobility');
   const [tone, setTone] = useState<Tone>('friendly');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [stepStatus, setStepStatus] = useState<Record<string, 'pending' | 'running' | 'completed' | 'failed'>>({});
+  const [currentSteps, setCurrentSteps] = useState(initialSteps);
   const [result, setResult] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentLogs, setCurrentLogs] = useState<Array<{
+    step: string;
+    level: string;
+    message: string;
+    timestamp: string;
+  }>>([]);
+  const [stepResults, setStepResults] = useState<Record<string, string>>({});
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
+
+  const formatJsonOutput = (output: string): string => {
+    try {
+      const parsed = JSON.parse(output);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return output;
+    }
+  };
+
+  const toggleStep = (stepId: string) => {
+    setExpandedSteps(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(stepId)) {
+        newSet.delete(stepId);
+      } else {
+        newSet.add(stepId);
+      }
+      return newSet;
+    });
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  useEffect(() => {
+    if (!showLogs || !selectedTask?.id) return;
+
+    const timer = setInterval(() => {
+      fetchTaskDetails(selectedTask.id);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [showLogs, selectedTask]);
+
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch('/api/tasks');
+      const data = await res.json();
+      setTasks(data.tasks || []);
+    } catch (error) {
+      console.error('Failed to fetch tasks:', error);
+    }
+  };
+
+  const fetchTaskDetails = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`);
+      const data = await res.json();
+      setSelectedTask(data);
+    } catch (error) {
+      console.error('Failed to fetch task details:', error);
+    }
+  };
+
+  const cancelTask = async (taskId: string) => {
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      await fetchTasks();
+    } catch (error) {
+      console.error('Failed to cancel task:', error);
+    }
+  };
 
   const handleKeywordChange = async (value: string) => {
     setKeyword(value);
@@ -89,7 +199,9 @@ export default function NewArticle() {
 
     setIsGenerating(true);
     setResult(null);
-    setStepStatus(steps.reduce((acc, step) => ({ ...acc, [step.id]: 'pending' }), {}));
+    setError(null);
+    setCurrentSteps(initialSteps);
+    setStepStatus(initialSteps.reduce((acc, step) => ({ ...acc, [step.id]: 'pending' }), {}));
 
     const request: ArticleGenerationRequest = {
       keyword: keyword.trim(),
@@ -122,13 +234,40 @@ export default function NewArticle() {
           try {
             const data = JSON.parse(chunk.replace('data: ', ''));
             if (data.type === 'step') {
+              if (data.taskId) {
+                setCurrentTaskId(data.taskId);
+              }
               setStepStatus(prev => ({
                 ...prev,
                 [data.stepId]: data.status as 'pending' | 'running' | 'completed' | 'failed',
               }));
+              setCurrentSteps(prev => {
+                const exists = prev.some(s => s.id === data.stepId);
+                if (!exists) {
+                  return [...prev, { id: data.stepId, name: data.name }];
+                }
+                return prev;
+              });
+              if (data.output) {
+                setStepResults(prev => ({
+                  ...prev,
+                  [data.stepId]: data.output,
+                }));
+              }
+            } else if (data.type === 'log') {
+              setCurrentLogs(prev => [...prev, {
+                step: data.step,
+                level: data.level,
+                message: data.message,
+                timestamp: data.timestamp,
+              }]);
             } else if (data.type === 'result') {
               setResult(data.data);
+              if (data.taskId) {
+                setCurrentTaskId(data.taskId);
+              }
             } else if (data.type === 'error') {
+              setError(data.message);
               throw new Error(data.message);
             }
           } catch {
@@ -138,8 +277,12 @@ export default function NewArticle() {
       }
     } catch (error) {
       console.error('Error:', error);
+      if (!error) {
+        setError('Generation failed unexpectedly');
+      }
     } finally {
       setIsGenerating(false);
+      await fetchTasks();
     }
   };
 
@@ -171,7 +314,12 @@ ${result.faq?.map((faq: any) => `### ${faq.question}\n\n${faq.answer}\n`).join('
   };
 
   const completedSteps = Object.values(stepStatus).filter(s => s === 'completed').length;
-  const progress = isGenerating ? (completedSteps / steps.length) * 100 : 0;
+  const totalSteps = Object.keys(stepStatus).length || currentSteps.length;
+  const progress = isGenerating ? (completedSteps / totalSteps) * 100 : 0;
+
+  const runningTasks = tasks.filter(t => t.status === 'running');
+  const completedTasks = tasks.filter(t => t.status === 'completed');
+  const failedTasks = tasks.filter(t => t.status === 'failed');
 
   return (
     <div className="p-8">
@@ -180,8 +328,8 @@ ${result.faq?.map((faq: any) => `### ${faq.question}\n\n${faq.answer}\n`).join('
         <p className="text-gray-500 mt-2">Generate high-quality health content with AI</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-blue-600" />
@@ -286,42 +434,98 @@ ${result.faq?.map((faq: any) => `### ${faq.question}\n\n${faq.answer}\n`).join('
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-600" />
-              {isGenerating ? 'Generation Progress' : 'Results'}
+              {isGenerating ? 'Generation Progress' : result ? 'Results' : 'Task Queue'}
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center gap-2 text-red-700">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="font-medium">Error</span>
+                </div>
+                <p className="text-red-600 mt-2">{error}</p>
+              </div>
+            )}
             {isGenerating ? (
               <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    color="red"
+                    size="sm"
+                    onClick={() => currentTaskId && cancelTask(currentTaskId)}
+                    disabled={!currentTaskId}
+                    className="gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel Task
+                  </Button>
+                </div>
                 <Progress value={progress} className="h-2" />
                 <div className="text-sm text-gray-500">
-                  {completedSteps}/{steps.length} steps completed
+                  {completedSteps}/{totalSteps} steps completed
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {steps.map((step) => (
+                <div className="space-y-2">
+                  {currentSteps.map((step) => (
                     <div
                       key={step.id}
-                      className={`flex items-center gap-2 p-2 rounded-lg ${
+                      className={`rounded-lg border transition-all ${
                         stepStatus[step.id] === 'completed'
-                          ? 'bg-green-50 text-green-700'
+                          ? 'border-green-200 bg-green-50'
                           : stepStatus[step.id] === 'running'
-                          ? 'bg-blue-50 text-blue-700'
+                          ? 'border-blue-200 bg-blue-50'
                           : stepStatus[step.id] === 'failed'
-                          ? 'bg-red-50 text-red-700'
-                          : 'bg-gray-50 text-gray-500'
+                          ? 'border-red-200 bg-red-50'
+                          : 'border-gray-200 bg-gray-50'
                       }`}
                     >
-                      {stepStatus[step.id] === 'completed' ? (
-                        <CheckCircle className="w-4 h-4" />
-                      ) : stepStatus[step.id] === 'running' ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : stepStatus[step.id] === 'failed' ? (
-                        <AlertCircle className="w-4 h-4" />
-                      ) : null}
-                      <span className="text-xs font-medium">{step.name}</span>
+                      <button
+                        onClick={() => toggleStep(step.id)}
+                        className="w-full p-3 flex items-center gap-3 text-left"
+                      >
+                        {stepStatus[step.id] === 'completed' ? (
+                          <CheckCircle className="w-5 h-5 text-green-600" />
+                        ) : stepStatus[step.id] === 'running' ? (
+                          <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                        ) : stepStatus[step.id] === 'failed' ? (
+                          <AlertCircle className="w-5 h-5 text-red-600" />
+                        ) : (
+                          <Circle className="w-5 h-5 text-gray-400" />
+                        )}
+                        <span className={`font-medium ${
+                          stepStatus[step.id] === 'completed'
+                            ? 'text-green-700'
+                            : stepStatus[step.id] === 'running'
+                            ? 'text-blue-700'
+                            : stepStatus[step.id] === 'failed'
+                            ? 'text-red-700'
+                            : 'text-gray-500'
+                        }`}>
+                          {step.name}
+                        </span>
+                        {stepResults[step.id] && (
+                          <span className="ml-auto text-xs text-gray-500 flex items-center gap-1">
+                            {expandedSteps.has(step.id) ? 'Hide' : 'View'} Result
+                            {expandedSteps.has(step.id) ? (
+                              <ChevronUp className="w-3 h-3" />
+                            ) : (
+                              <ChevronDown className="w-3 h-3" />
+                            )}
+                          </span>
+                        )}
+                      </button>
+                      {stepResults[step.id] && expandedSteps.has(step.id) && (
+                        <div className="px-6 pb-3">
+                          <div className="p-3 bg-white rounded-lg border border-gray-200 text-xs font-mono max-h-64 overflow-y-auto whitespace-pre-wrap">
+                            {formatJsonOutput(stepResults[step.id])}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -431,14 +635,261 @@ ${result.faq?.map((faq: any) => `### ${faq.question}\n\n${faq.answer}\n`).join('
                 </TabsContent>
               </Tabs>
             ) : (
-              <div className="text-center py-12 text-gray-400">
-                <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p>Enter article settings and click Generate to create content</p>
+              <div className="space-y-4">
+                {runningTasks.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-sm text-gray-500 mb-2">Running Tasks</h3>
+                    <div className="space-y-2">
+                      {runningTasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className="p-3 bg-blue-50 rounded-lg"
+                          onClick={() => {
+                            fetchTaskDetails(task.id);
+                            setShowLogs(true);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                              <span className="text-sm font-medium text-blue-700 truncate">{task.keyword}</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelTask(task.id);
+                              }}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          <Progress value={task.progress} className="h-1 mt-2" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {completedTasks.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-sm text-gray-500 mb-2">Completed Tasks</h3>
+                    <div className="space-y-2">
+                      {completedTasks.slice(0, 5).map((task) => (
+                        <div
+                          key={task.id}
+                          className="p-3 bg-green-50 rounded-lg flex items-center justify-between"
+                          onClick={() => {
+                            fetchTaskDetails(task.id);
+                            setShowLogs(true);
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                            <span className="text-sm text-green-700 truncate">{task.keyword}</span>
+                          </div>
+                          <Clock className="w-4 h-4 text-green-400" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {failedTasks.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-sm text-red-500 mb-2">Failed Tasks</h3>
+                    <div className="space-y-2">
+                      {failedTasks.slice(0, 5).map((task) => (
+                        <div
+                          key={task.id}
+                          className="p-3 bg-red-50 rounded-lg"
+                          onClick={() => {
+                            fetchTaskDetails(task.id);
+                            setShowLogs(true);
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-red-600" />
+                            <span className="text-sm text-red-700 truncate">{task.keyword}</span>
+                          </div>
+                          {task.error && (
+                            <p className="text-xs text-red-500 mt-1 truncate">{task.error}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tasks.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                    <p>No tasks in queue</p>
+                    <p className="text-sm mt-1">Enter article settings and click Generate</p>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
+
       </div>
+
+      <Dialog open={showLogs} onClose={() => setShowLogs(false)}>
+          <DialogContent className="max-w-7xl max-h-[85vh]">
+            <DialogHeader className="flex flex-row items-center justify-between">
+              <div>
+                <DialogTitle className="flex items-center gap-2">
+                  <ScrollText className="w-5 h-5 text-gray-500" />
+                  Task Logs
+                </DialogTitle>
+                {selectedTask && (
+                  <DialogDescription className="text-sm">
+                    {selectedTask.keyword} - {selectedTask.status}
+                  </DialogDescription>
+                )}
+              </div>
+              {selectedTask?.status === 'running' && (
+                <Button
+                  variant="outline"
+                  color="red"
+                  size="sm"
+                  onClick={() => cancelTask(selectedTask.id)}
+                  className="gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  Cancel Task
+                </Button>
+              )}
+            </DialogHeader>
+            {selectedTask && (
+              <div className="space-y-4">
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm font-medium text-gray-700">{selectedTask.keyword}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant={
+                      selectedTask.status === 'running' ? 'default' :
+                      selectedTask.status === 'completed' ? 'secondary' : 'outline'
+                    } className="text-xs">
+                      {selectedTask.status}
+                    </Badge>
+                    <span className="text-xs text-gray-400">
+                      {new Date(selectedTask.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <Progress value={selectedTask.progress} className="h-1 mt-2" />
+                </div>
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                  {(() => {
+                    const logsByStep: Record<string, typeof selectedTask.logs> = {};
+                    (selectedTask?.logs || []).forEach((log) => {
+                      const step = log.step;
+                      if (!logsByStep[step]) logsByStep[step] = [];
+                      logsByStep[step].push(log);
+                    });
+
+                    return Object.entries(logsByStep).map(([stepName, stepLogs]) => {
+                      if (!stepLogs || stepLogs.length === 0) return null;
+                      
+                      const hasError = stepLogs.some(l => l.level === 'error');
+                      const isCompleted = stepLogs.some(l => l.message.includes('Completed'));
+                      const isRunning = selectedTask.status === 'running' && stepLogs[stepLogs.length - 1]?.level === 'info' && !stepLogs[stepLogs.length - 1]?.message.includes('Completed');
+                      
+                      return (
+                        <div
+                          key={stepName}
+                          className={`rounded-lg border transition-all ${
+                            isCompleted ? 'border-green-200 bg-green-50' :
+                            isRunning ? 'border-blue-200 bg-blue-50' :
+                            hasError ? 'border-red-200 bg-red-50' :
+                            'border-gray-200 bg-gray-50'
+                          }`}
+                        >
+                          <div className="w-full p-3 flex items-center gap-3">
+                            {isCompleted ? (
+                              <CheckCircle className="w-5 h-5 text-green-600" />
+                            ) : isRunning ? (
+                              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                            ) : hasError ? (
+                              <AlertCircle className="w-5 h-5 text-red-600" />
+                            ) : (
+                              <Circle className="w-5 h-5 text-gray-400" />
+                            )}
+                            <span className={`font-medium ${
+                              isCompleted ? 'text-green-700' :
+                              isRunning ? 'text-blue-700' :
+                              hasError ? 'text-red-700' :
+                              'text-gray-500'
+                            }`}>
+                              {stepName}
+                            </span>
+                            <span className="ml-auto text-xs text-gray-400">
+                              {stepLogs.length} logs
+                            </span>
+                          </div>
+                          <div className="px-6 pb-3 space-y-1">
+                            {stepLogs.map((log) => (
+                              <div key={log.id} className="flex items-start gap-3 p-2 bg-white rounded-lg border border-gray-100">
+                                <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                                  log.level === 'error' ? 'bg-red-500' :
+                                  log.level === 'warning' ? 'bg-yellow-500' : 'bg-green-500'
+                                }`} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-400">
+                                      {new Date(log.timestamp).toLocaleTimeString()}
+                                    </span>
+                                    <Badge variant="outline" className="text-xs px-2">
+                                      {log.level}
+                                    </Badge>
+                                  </div>
+                                  <div className="text-sm text-gray-600 mt-0.5 font-mono text-xs whitespace-pre-wrap">
+                                    {formatJsonOutput(log.message)}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }).filter(Boolean);
+                  })()}
+                  {isGenerating && currentLogs.length > 0 && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                        <span className="text-sm font-medium text-blue-600">Live Logs</span>
+                      </div>
+                      {currentLogs.map((log, index) => (
+                        <div key={`live-${index}`} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50">
+                          <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                            log.level === 'error' ? 'bg-red-500' :
+                            log.level === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-600">{log.step}</span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(log.timestamp).toLocaleTimeString()}
+                              </span>
+                              <Badge variant="outline" className="text-xs px-2">
+                                {log.level}
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-gray-500 mt-0.5 font-mono text-xs whitespace-pre-wrap">
+                              {formatJsonOutput(log.message)}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }

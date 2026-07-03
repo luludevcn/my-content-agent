@@ -40,23 +40,27 @@ const Tabs = ({ defaultValue, value: controlledValue, onValueChange, children }:
     <div className="space-y-2">
       {React.Children.map(triggerChildren, (child) =>
         React.isValidElement(child)
-          ? React.cloneElement(child as React.ReactElement, { value: currentValue, onValueChange: handleChange })
+          ? React.cloneElement(child as React.ReactElement, { selectedValue: currentValue, onValueChange: handleChange })
           : child
       )}
-      {contentChildren}
+      {React.Children.map(contentChildren, (child) =>
+        React.isValidElement(child)
+          ? React.cloneElement(child as React.ReactElement, { selectedValue: currentValue })
+          : child
+      )}
     </div>
   );
 };
 Tabs.displayName = 'Tabs';
 
 interface TabsListProps {
-  value?: string;
+  selectedValue?: string;
   onValueChange?: (value: string) => void;
   children: React.ReactNode;
   className?: string;
 }
 
-const TabsList = ({ value, onValueChange, children, className }: TabsListProps) => {
+const TabsList = ({ selectedValue, onValueChange, children, className }: TabsListProps) => {
   return (
     <div
       className={cn(
@@ -66,7 +70,7 @@ const TabsList = ({ value, onValueChange, children, className }: TabsListProps) 
     >
       {React.Children.map(children, (child) =>
         React.isValidElement(child)
-          ? React.cloneElement(child as React.ReactElement, { value, onValueChange })
+          ? React.cloneElement(child as React.ReactElement, { selectedValue, onValueChange })
           : child
       )}
     </div>
@@ -76,18 +80,18 @@ TabsList.displayName = 'TabsList';
 
 interface TabsTriggerProps {
   value?: string;
+  selectedValue?: string;
   onValueChange?: (value: string) => void;
   children: React.ReactNode;
   className?: string;
 }
 
-const TabsTrigger = ({ value, onValueChange, children, className }: TabsTriggerProps) => {
-  const triggerValue = (children as React.ReactElement)?.props?.value || '';
-  const isActive = value === triggerValue;
+const TabsTrigger = ({ value, selectedValue, onValueChange, children, className }: TabsTriggerProps) => {
+  const isActive = selectedValue === value;
 
   return (
     <button
-      onClick={() => onValueChange?.(triggerValue)}
+      onClick={() => onValueChange?.(value || '')}
       className={cn(
         'inline-flex items-center justify-center rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
         isActive
@@ -104,13 +108,13 @@ TabsTrigger.displayName = 'TabsTrigger';
 
 interface TabsContentProps {
   value?: string;
+  selectedValue?: string;
   children: React.ReactNode;
   className?: string;
 }
 
-const TabsContent = ({ value, children, className }: TabsContentProps) => {
-  const contentValue = (children as React.ReactElement)?.props?.value || '';
-  const isActive = value === contentValue;
+const TabsContent = ({ value, selectedValue, children, className }: TabsContentProps) => {
+  const isActive = selectedValue === value;
 
   return (
     <div

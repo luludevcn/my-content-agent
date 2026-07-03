@@ -1,10 +1,19 @@
 export { OllamaClient, createOllamaClient } from './ollama';
 export {
   IntentAgent,
+  RAGAgent,
   OutlineAgent,
-  WriterAgent,
+  ArticleWriterAgent,
   SEOAgent,
-  MedicalReviewAgent,
-  InternalLinkAgent,
+  LocalMedicalChecker,
+  LocalInternalLinker,
   ArticleGenerator
 } from './agents';
+export {
+  registerTask,
+  unregisterTask,
+  getTaskController,
+  abortTask,
+  getActiveTaskCount,
+  listActiveTasks
+} from './task-registry';

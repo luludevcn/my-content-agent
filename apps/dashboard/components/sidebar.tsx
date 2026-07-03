@@ -7,7 +7,8 @@ import {
   Calendar, 
   BookOpen, 
   Settings,
-  Wand2
+  Wand2,
+  Layers
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -15,9 +16,11 @@ import { usePathname } from 'next/navigation';
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: '/' },
   { id: 'new-article', label: 'New Article', icon: FileText, href: '/new-article' },
+  { id: 'batch-generate', label: 'Batch Generate', icon: Layers, href: '/batch-generate' },
+  { id: 'articles', label: 'Articles', icon: BookOpen, href: '/articles' },
   { id: 'optimize', label: 'Optimize', icon: Sparkles, href: '/optimize' },
   { id: 'topic-planner', label: 'Topic Planner', icon: Calendar, href: '/topic-planner' },
-  { id: 'knowledge', label: 'Knowledge', icon: BookOpen, href: '/knowledge' },
+  { id: 'knowledge', label: 'Knowledge', icon: Sparkles, href: '/knowledge' },
   { id: 'prompt-studio', label: 'Prompt Studio', icon: Wand2, href: '/prompt-studio' },
   { id: 'settings', label: 'Settings', icon: Settings, href: '/settings' },
 ];

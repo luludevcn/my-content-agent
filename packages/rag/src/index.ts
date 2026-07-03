@@ -1,8 +1,13 @@
 import { EmbeddingClient, createEmbeddingClient } from '@health-content-ai/embeddings';
 import { InternalLink } from '@health-content-ai/shared';
+import {
+  addRagDocument,
+  getRagDocuments,
+  getRagDocumentCount,
+  searchRagDocuments,
+} from '@health-content-ai/database';
 
 export interface RAGConfig {
-  qdrantUrl?: string;
   collectionName?: string;
 }
 
@@ -19,68 +24,21 @@ export interface SearchResult {
   score: number;
 }
 
-const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
-const QDRANT_COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'health_articles';
-
 export class RAGClient {
-  private qdrantUrl: string;
   private collectionName: string;
   private embeddingClient: EmbeddingClient;
 
   constructor(config?: Partial<RAGConfig>) {
-    this.qdrantUrl = config?.qdrantUrl || QDRANT_URL;
-    this.collectionName = config?.collectionName || QDRANT_COLLECTION_NAME;
+    this.collectionName = config?.collectionName || 'health_articles';
     this.embeddingClient = createEmbeddingClient();
-  }
-
-  private async request(path: string, options: RequestInit = {}) {
-    const url = `${this.qdrantUrl}${path}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-    return response.json();
   }
 
   async initCollection(): Promise<void> {
     try {
-      const collections = await this.request('/collections') as { collections: { name: string }[] };
-      const exists = collections.collections.some(
-        (c: any) => c.name === this.collectionName
-      );
-
-      if (!exists) {
-        await this.request(`/collections/${this.collectionName}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            vectors: {
-              size: 768,
-              distance: 'Cosine',
-            },
-          }),
-        });
-
-        await this.request(`/collections/${this.collectionName}/index`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            field_name: 'title',
-            field_schema: 'keyword',
-          }),
-        });
-
-        await this.request(`/collections/${this.collectionName}/index`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            field_name: 'category',
-            field_schema: 'keyword',
-          }),
-        });
-      }
-    } catch {
-      console.warn('Qdrant initialization failed');
+      const count = await getRagDocumentCount();
+      console.log(`RAG collection initialized with ${count} documents`);
+    } catch (error) {
+      console.warn('RAG initialization failed:', error);
     }
   }
 
@@ -90,23 +48,16 @@ export class RAGClient {
         `${document.title} ${document.content.substring(0, 500)}`
       );
 
-      await this.request(`/collections/${this.collectionName}/points`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          points: [{
-            id: document.id,
-            vector: embeddingResult.embedding,
-            payload: {
-              title: document.title,
-              content: document.content,
-              url: document.url,
-              category: document.category,
-            },
-          }],
-        }),
+      await addRagDocument({
+        id: document.id,
+        title: document.title,
+        content: document.content,
+        url: document.url,
+        category: document.category,
+        embedding: embeddingResult.embedding,
       });
-    } catch {
-      console.warn('Failed to add document');
+    } catch (error) {
+      console.warn('Failed to add document:', error);
     }
   }
 
@@ -119,28 +70,26 @@ export class RAGClient {
   async search(query: string, limit: number = 10): Promise<SearchResult[]> {
     try {
       const embeddingResult = await this.embeddingClient.embed(query);
+      
+      if (!embeddingResult.embedding || embeddingResult.embedding.length === 0) {
+        console.warn('RAG search failed: Empty embedding result');
+        return [];
+      }
 
-      const results = await this.request(`/collections/${this.collectionName}/points/search`, {
-        method: 'POST',
-        body: JSON.stringify({
-          vector: embeddingResult.embedding,
-          limit,
-          with_payload: true,
-        }),
-      }) as { result: Array<{ id: string; payload: { title?: string; content?: string; url?: string; category?: string }; score: number }> };
+      const results = await searchRagDocuments(embeddingResult.embedding, limit);
 
-      return results.result.map((result) => ({
+      return results.map((result) => ({
         document: {
-          id: result.id as string,
-          title: result.payload?.title as string,
-          content: result.payload?.content as string,
-          url: result.payload?.url as string,
-          category: result.payload?.category as string,
+          id: result.id,
+          title: result.title,
+          content: result.content,
+          url: result.url,
+          category: result.category,
         },
         score: result.score || 0,
       }));
-    } catch {
-      console.warn('RAG search failed');
+    } catch (error) {
+      console.error('RAG search failed:', error);
       return [];
     }
   }
@@ -162,8 +111,7 @@ export class RAGClient {
 
   async getDocumentCount(): Promise<number> {
     try {
-      const info = await this.request(`/collections/${this.collectionName}`) as { points_count?: number };
-      return info.points_count || 0;
+      return await getRagDocumentCount();
     } catch {
       return 0;
     }
@@ -171,11 +119,15 @@ export class RAGClient {
 
   async checkHealth(): Promise<boolean> {
     try {
-      await this.request('/collections');
+      await getRagDocumentCount();
       return true;
     } catch {
       return false;
     }
+  }
+
+  getStorageMode(): 'sqlite' {
+    return 'sqlite';
   }
 }
 

@@ -11,7 +11,7 @@ import { Settings as SettingsIcon, Database, Cpu, Shield, Bell, Save, CheckCircl
 
 export default function Settings() {
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
-  const [model, setModel] = useState('qwen3:14b');
+  const [model, setModel] = useState('gemma3:12b');
   const [temperature, setTemperature] = useState('0.7');
   const [qdrantUrl, setQdrantUrl] = useState('http://localhost:6333');
   const [collectionName, setCollectionName] = useState('health_articles');
@@ -52,6 +52,7 @@ export default function Settings() {
                   <Label htmlFor="model">Model</Label>
                   <Select value={model} onChange={(e) => setModel(e.target.value)}>
                     <option value="">Select model</option>
+                    <option value="gemma3:12b">Gemma3 12B</option>
                     <option value="qwen3:14b">Qwen3 14B</option>
                     <option value="qwen3:7b">Qwen3 7B</option>
                     <option value="llama3:8b">Llama 3 8B</option>

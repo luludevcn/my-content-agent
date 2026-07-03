@@ -1,19 +1,45 @@
+'use client';
+
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 
-const Dialog = React.forwardRef<
-  HTMLDialogElement,
-  React.DialogHTMLAttributes<HTMLDialogElement>
->(({ className, ...props }, ref) => (
-  <dialog
-    ref={ref}
-    className={cn(
-      'relative z-50 w-full max-w-lg rounded-xl border border-gray-200 bg-white p-6 text-left shadow-2xl',
-      className
-    )}
-    {...props}
-  />
-));
+interface DialogProps {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  className?: string;
+}
+
+const Dialog = ({ open, onClose, children, className }: DialogProps) => {
+  if (!open) return null;
+
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'relative w-full max-w-4xl rounded-xl border border-gray-200 bg-white p-6 text-left shadow-2xl',
+          'transform transition-all duration-200',
+          'animate-in fade-in zoom-in-95',
+          className
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 Dialog.displayName = 'Dialog';
 
 const DialogHeader = React.forwardRef<

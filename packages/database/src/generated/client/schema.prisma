@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id              String   @id @default(cuid())
+  title           String
+  slug            String   @unique
+  content         String
+  category        String
+  tags            String   @default("[]")
+  metaTitle       String
+  metaDescription String
+  excerpt         String
+  seoTitle        String
+  seoKeywords     String   @default("[]")
+  seoSchema       String
+  status          String   @default("draft")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  taskId          String?
+
+  @@index([slug])
+  @@index([category])
+  @@index([status])
+}
+
+model Task {
+  id        String    @id @default(cuid())
+  keyword   String
+  status    String    @default("pending")
+  audience  String
+  length    Int
+  category  String
+  tone      String
+  progress  Int       @default(0)
+  error     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  logs      TaskLog[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model TaskLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  step      String
+  message   String
+  level     String   @default("info")
+  timestamp DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([timestamp])
+}
+
+model RagDocument {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  url       String
+  category  String
+  embedding String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([title])
+  @@index([category])
+}
