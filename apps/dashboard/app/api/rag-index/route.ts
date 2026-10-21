@@ -6,11 +6,28 @@ import path from 'path';
 
 interface IndexRequest {
   source: 'database' | 'files';
+  directoryPath?: string;
+}
+
+function findAllMdFiles(dir: string): string[] {
+  let results: string[] = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results = results.concat(findAllMdFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      results.push(fullPath);
+    }
+  }
+  
+  return results;
 }
 
 export async function POST(request: Request) {
   try {
-    const { source } = await request.json() as IndexRequest;
+    const { source, directoryPath } = await request.json() as IndexRequest;
     const ragClient = createRAGClient();
     
     let indexedCount = 0;
@@ -34,25 +51,33 @@ export async function POST(request: Request) {
         }
       }
     } else if (source === 'files') {
-      const contentDir = path.join(process.cwd(), '../content');
+      const contentDir = directoryPath || path.join(process.cwd(), '../content');
+      
       if (!fs.existsSync(contentDir)) {
         return NextResponse.json(
-          { error: 'Content directory not found' },
+          { error: `Directory not found: ${contentDir}` },
           { status: 404 }
         );
       }
 
-      const mdFiles = fs.readdirSync(contentDir).filter(f => f.endsWith('.md'));
+      if (!fs.statSync(contentDir).isDirectory()) {
+        return NextResponse.json(
+          { error: `Path is not a directory: ${contentDir}` },
+          { status: 400 }
+        );
+      }
+
+      const mdFiles = findAllMdFiles(contentDir);
       
-      for (const filename of mdFiles) {
+      for (const filePath of mdFiles) {
         try {
-          const filePath = path.join(contentDir, filename);
           const content = fs.readFileSync(filePath, 'utf-8');
           
           const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-          const slug = filename.replace('.md', '');
+          const relativePath = path.relative(contentDir, filePath);
+          const slug = relativePath.replace(/\\/g, '/').replace('.md', '');
           
-          let title = slug.replace(/-/g, ' ');
+          let title = slug.replace(/-/g, ' ').replace(/\//g, ' - ');
           let category = 'general';
           
           if (frontmatterMatch) {
@@ -97,21 +122,25 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ragClient = createRAGClient();
     const documentCount = await ragClient.getDocumentCount();
     
-    const contentDir = path.join(process.cwd(), '../content');
+    const searchParams = new URL(request.url).searchParams;
+    const directoryPath = searchParams.get('directoryPath');
+    
+    const contentDir = directoryPath || path.join(process.cwd(), '../content');
     const hasContentDir = fs.existsSync(contentDir);
-    const mdFileCount = hasContentDir 
-      ? fs.readdirSync(contentDir).filter(f => f.endsWith('.md')).length 
+    const mdFileCount = hasContentDir && fs.statSync(contentDir).isDirectory()
+      ? findAllMdFiles(contentDir).length
       : 0;
 
     return NextResponse.json({
       documentCount,
       storageMode: ragClient.getStorageMode(),
       availableFiles: mdFileCount,
+      directoryPath: contentDir,
     });
   } catch (error) {
     return NextResponse.json(

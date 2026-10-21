@@ -92,3 +92,82 @@ export interface GenerationStep {
   error?: string;
   icon?: any;
 }
+
+export type AnalysisCategory = 
+  | 'seo'
+  | 'readability'
+  | 'eeat'
+  | 'medical'
+  | 'ai-search'
+  | 'conversion'
+  | 'accessibility';
+
+export type Severity = 'critical' | 'high' | 'medium' | 'low';
+
+export type Difficulty = 'easy' | 'medium' | 'hard';
+
+export interface AnalysisIssue {
+  id: string;
+  category: AnalysisCategory;
+  severity: Severity;
+  title: string;
+  description: string;
+  why: string;
+  impact: string;
+  difficulty: Difficulty;
+  estimatedScoreGain: number;
+  confidence: number;
+}
+
+export interface AnalysisSuggestion {
+  id: string;
+  issueId: string;
+  category: AnalysisCategory;
+  title: string;
+  description: string;
+  confidence: number;
+  estimatedScoreGain: number;
+  difficulty: Difficulty;
+  actionType: 'add' | 'modify' | 'delete' | 'rewrite';
+  targetSection?: string;
+}
+
+export interface CategoryScore {
+  category: AnalysisCategory;
+  score: number;
+  maxScore: number;
+  label: string;
+}
+
+export interface AnalysisResult {
+  id: string;
+  articleId: string;
+  articleTitle: string;
+  overallScore: number;
+  categoryScores: CategoryScore[];
+  issues: AnalysisIssue[];
+  suggestions: AnalysisSuggestion[];
+  createdAt: string;
+}
+
+export interface SEORecommendation {
+  title: string;
+  metaDescription: string;
+  slug: string;
+  keywords: string[];
+  schema: string;
+  canonicalUrl?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
+  twitterTitle?: string;
+  twitterDescription?: string;
+}
+
+export interface OptimizeDiff {
+  suggestionId: string;
+  before: string;
+  after: string;
+  changes: string[];
+  applied: boolean;
+}

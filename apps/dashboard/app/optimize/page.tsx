@@ -1,227 +1,140 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { TrendingUp, AlertTriangle, CheckCircle, Sparkles, FileText } from 'lucide-react';
+import { Search, ArrowRight, FileSearch } from 'lucide-react';
 
-export default function Optimize() {
-  const [keyword, setKeyword] = useState('');
-  const [content, setContent] = useState('');
-  const [analysis, setAnalysis] = useState<any>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+interface Article {
+  id: string;
+  title: string;
+  slug: string;
+  category: string;
+  createdAt: string;
+}
 
-  const handleAnalyze = () => {
-    if (!content.trim()) return;
+export default function OptimizeHome() {
+  const router = useRouter();
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-    setIsAnalyzing(true);
+  useEffect(() => {
+    fetchArticles();
+  }, []);
 
-    setTimeout(() => {
-      const wordCount = content.split(/\s+/).length;
-      const headingCount = (content.match(/^#{1,3}\s+/gm) || []).length;
-      const imageCount = (content.match(/!\[.*?\]/g) || []).length;
-      const readingLevel = Math.round(Math.random() * 5 + 8);
-      
-      let score = 100;
-      const issues: string[] = [];
-      const suggestions: string[] = [];
-
-      if (wordCount < 1000) {
-        issues.push('Content is too short');
-        suggestions.push('Expand content to at least 1000 words');
-        score -= 20;
-      } else if (wordCount > 3000) {
-        suggestions.push('Consider breaking content into multiple articles');
-        score -= 5;
-      }
-
-      if (headingCount < 3) {
-        issues.push('Insufficient heading structure');
-        suggestions.push('Add more H2 and H3 headings');
-        score -= 10;
-      }
-
-      if (imageCount === 0) {
-        suggestions.push('Add relevant images to improve engagement');
-        score -= 5;
-      }
-
-      if (readingLevel > 12) {
-        suggestions.push('Simplify sentence structure for better readability');
-        score -= 10;
-      }
-
-      setAnalysis({
-        score: Math.max(0, score),
-        wordCount,
-        headingCount,
-        imageCount,
-        readingLevel,
-        issues,
-        suggestions,
-        seoTitle: keyword ? `${keyword} - Comprehensive Guide` : '',
-        metaDescription: content.substring(0, 160),
-        slug: keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        keywords: ['health', 'wellness', 'tips', 'guide', 'advice'],
-      });
-      setIsAnalyzing(false);
-    }, 1500);
+  const fetchArticles = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/articles?limit=50');
+      const data = await res.json();
+      setArticles(data.articles || []);
+    } catch (err) {
+      console.error('Failed to fetch articles:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const handleSelectArticle = (articleId: string) => {
+    router.push(`/optimize/${articleId}/analyze`);
+  };
+
+  const filteredArticles = articles.filter(article =>
+    article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    article.slug.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Optimize</h1>
-        <p className="text-gray-500 mt-2">Analyze and optimize your content for SEO and readability</p>
+        <p className="text-gray-500 mt-2">Select an article to analyze and optimize</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileSearch className="w-5 h-5 text-blue-600" />
+            Select Article
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search articles..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-gray-400">Loading articles...</div>
+            </div>
+          ) : filteredArticles.length === 0 ? (
+            <div className="text-center py-8">
+              <FileSearch className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-gray-400">No articles found</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {filteredArticles.map((article) => (
+                <button
+                  key={article.id}
+                  onClick={() => handleSelectArticle(article.id)}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors text-left"
+                >
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-gray-900 truncate">{article.title}</h4>
+                    <p className="text-sm text-gray-500">{article.slug}</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-gray-400">
+                      {new Date(article.createdAt).toLocaleDateString()}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-gray-400" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-600" />
-              Content Analysis
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="keyword">Target Keyword</Label>
-              <Input
-                id="keyword"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder="Enter your target keyword"
-              />
+          <CardContent className="p-6 text-center">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileSearch className="w-8 h-8 text-blue-600" />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="content">Article Content</Label>
-              <Textarea
-                id="content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Paste your article content here..."
-                className="min-h-[400px]"
-              />
-            </div>
-
-            <Button onClick={handleAnalyze} disabled={isAnalyzing || !content.trim()} className="w-full">
-              {isAnalyzing ? (
-                <Sparkles className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <TrendingUp className="w-4 h-4 mr-2" />
-              )}
-              {isAnalyzing ? 'Analyzing...' : 'Analyze Content'}
-            </Button>
+            <h3 className="font-bold text-lg">Analyze</h3>
+            <p className="text-sm text-gray-500 mt-2">AI scans your article for SEO, readability, and medical accuracy issues</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
-              Analysis Results
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {analysis ? (
-              <>
-                <div className="text-center py-4">
-                  <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full text-2xl font-bold ${
-                    analysis.score >= 80 ? 'bg-green-100 text-green-700' :
-                    analysis.score >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
-                    {analysis.score}
-                  </div>
-                  <p className="text-gray-500 mt-2">Overall Score</p>
-                  <Progress value={analysis.score} className="mt-4" />
-                </div>
+          <CardContent className="p-6 text-center">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ArrowRight className="w-8 h-8 text-green-600" />
+            </div>
+            <h3 className="font-bold text-lg">Optimize</h3>
+            <p className="text-sm text-gray-500 mt-2">Apply AI suggestions one by one with real-time preview</p>
+          </CardContent>
+        </Card>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Word Count</p>
-                    <p className="text-xl font-bold">{analysis.wordCount}</p>
-                  </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Headings</p>
-                    <p className="text-xl font-bold">{analysis.headingCount}</p>
-                  </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Images</p>
-                    <p className="text-xl font-bold">{analysis.imageCount}</p>
-                  </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Reading Level</p>
-                    <p className="text-xl font-bold">Grade {analysis.readingLevel}</p>
-                  </div>
-                </div>
-
-                {analysis.issues.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-red-600 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4" />
-                      Issues Found
-                    </p>
-                    {analysis.issues.map((issue: string, index: number) => (
-                      <Badge key={index} variant="destructive" className="block w-full text-left">
-                        {issue}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                {analysis.suggestions.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-blue-600 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Optimization Suggestions
-                    </p>
-                    {analysis.suggestions.map((suggestion: string, index: number) => (
-                      <div key={index} className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-                        {suggestion}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="pt-4 border-t">
-                  <p className="text-sm font-medium mb-3">SEO Recommendations</p>
-                  <div className="space-y-3">
-                    <div>
-                      <Label className="text-xs">Title</Label>
-                      <Input readOnly value={analysis.seoTitle} className="text-sm" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Meta Description</Label>
-                      <Textarea readOnly value={analysis.metaDescription} className="text-sm min-h-[60px]" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Slug</Label>
-                      <Input readOnly value={analysis.slug} className="text-sm" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Keywords</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {analysis.keywords.map((kw: string) => (
-                          <Badge key={kw} variant="secondary">{kw}</Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-12 text-gray-400">
-                <TrendingUp className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p>Enter content to analyze</p>
-              </div>
-            )}
+        <Card>
+          <CardContent className="p-6 text-center">
+            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Search className="w-8 h-8 text-purple-600" />
+            </div>
+            <h3 className="font-bold text-lg">SEO & Publish</h3>
+            <p className="text-sm text-gray-500 mt-2">Optimize meta tags, preview in search, and export in multiple formats</p>
           </CardContent>
         </Card>
       </div>
